@@ -25,7 +25,7 @@ static constexpr int kOutputVideoFPS = 60;
 static constexpr std::string_view kOutputVideoFormat = ".mp4";
 static constexpr std::optional<std::string_view> kVideoEncoding = "avc1";
 
-class GravitoryVideoApp : public GravitoyApp
+class GravitoyVideoApp : public GravitoyApp
 {
 public:
     using Super = GravitoyApp;
@@ -123,7 +123,7 @@ public:
 
 void Main()
 {
-    GravitoryVideoApp app;
+    GravitoyVideoApp app;
     app.Run();
 }
 }  // namespace klgl::gravitoy

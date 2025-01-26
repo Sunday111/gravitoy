@@ -1,10 +1,10 @@
 layout (local_size_x = 1) in;
 
 const float Gravity1 = 1000.0;
-uniform vec3 BlackHolePos1 = vec3(5,0,0);
+uniform vec4 BlackHolePos1 = vec4(5,0,0,0);
 
 const float Gravity2 = 1000.0;
-uniform vec3 BlackHolePos2 = vec3(-5,0,0);
+uniform vec4 BlackHolePos2 = vec4(-5,0,0,0);
 
 const float ParticleMass = 0.1;
 const float ParticleInvMass = 1.0 / ParticleMass;
@@ -13,11 +13,11 @@ const float MaxDist = 45.0;
 uniform float u_delta_t = 0.000005;
 
 layout(std430, binding=0) buffer Pos {
-    vec3 Position[];
+    vec4 Position[];
 };
 
 layout(std430, binding=1) buffer Vel {
-    vec3 Velocity[];
+    vec4 Velocity[];
 };
 
 vec3 forceByBody(vec3 position, vec3 body, float gravity) {
@@ -34,18 +34,18 @@ void main() {
     vec3 p = Position[idx].xyz;
 
     // Compute gravitational force caused by bodies
-    vec3 force = forceByBody(p, BlackHolePos1, Gravity1) + forceByBody(p, BlackHolePos2, Gravity2);
+    vec3 force = forceByBody(p, BlackHolePos1.xyz, Gravity1) + forceByBody(p, BlackHolePos2.xyz, Gravity2);
 
     // Apply simple Euler integrator
     vec3 a = force * ParticleInvMass;
     vec3 new_pos = p + Velocity[idx].xyz * u_delta_t + 0.5 * a * u_delta_t * u_delta_t;
     vec3 new_vel = Velocity[idx].xyz + a * u_delta_t;
 
-    Position[idx] = new_pos;
+    Position[idx].xyz = new_pos;
 
 //    vec3[2] vel_opts;
 //    vel_opts[0] = new_vel;
 //    vel_opts[1] = new_vel + normalize(-new_pos);
 //    Velocity[idx] = vel_opts[dot(p, p) > (MaxDist * MaxDist) ? 1 : 0];
-    Velocity[idx] = new_vel;
+    Velocity[idx].xyz = new_vel;
 }

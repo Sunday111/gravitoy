@@ -36,7 +36,7 @@ public:
 class GravitoyApp : public Application
 {
 public:
-    static std::vector<Vec3f> CalculateInitialParticePositions();
+    static std::vector<Vec4f> CalculateInitialParticePositions();
 
     std::tuple<int, int> GetOpenGLVersion() const override { return {4, 5}; }
 
@@ -44,7 +44,7 @@ public:
     void SimulationTimeStep();
     void RenderWorld();
 
-    std::span<const edt::Vec3f> UpdateBodiesPositions();
+    std::span<const edt::Vec4f> UpdateBodiesPositions();
 
     void Tick() override;
 
@@ -82,7 +82,7 @@ public:
     UniformHandle u_body_color_ = UniformHandle("u_color");
     UniformHandle u_body_mvp_ = UniformHandle("u_mvp");
 
-    std::vector<Vec3f> bodies_positions_;
+    std::vector<Vec4f> bodies_positions_;
 
     float particle_alpha_ = 0.1f;
 

@@ -1,5 +1,7 @@
 #include "gravitoy/app.hpp"
 
+#include <numbers>
+
 #include "klgl/events/event_listener_method.hpp"
 #include "klgl/events/event_manager.hpp"
 #include "klgl/opengl/gl_api.hpp"
@@ -28,11 +30,11 @@ void GravitoyApp::Initialize()
     OpenGl::BindVertexArray(particles_vao_);
     {
         const size_t a_particle_shader_position =
-            particle_shader_->GetInfo().VerifyAndGetVertexAttributeLocation<edt::Vec3f>("a_position");
+            particle_shader_->GetInfo().VerifyAndGetVertexAttributeLocation<edt::Vec4f>("a_position");
         particels_positions_buffer_ = OpenGl::GenBuffer();
-        const auto positions = CalculateInitialParticePositions();
+        const auto particles = CalculateInitialParticePositions();
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particels_positions_buffer_.GetValue());
-        OpenGl::BufferData(GlBufferType::ShaderStorage, std::span{positions}, GlUsage::DynamicDraw);
+        OpenGl::BufferData(GlBufferType::ShaderStorage, std::span{particles}, GlUsage::DynamicDraw);
         OpenGl::BindBuffer(GlBufferType::Array, particels_positions_buffer_);
         OpenGl::EnableVertexAttribArray(a_particle_shader_position);
         VertexBufferHelperStatic<edt::Vec4f, false>::AttributePointer(a_particle_shader_position);
@@ -40,9 +42,9 @@ void GravitoyApp::Initialize()
 
     {
         const size_t a_particle_shader_velocity =
-            particle_shader_->GetInfo().VerifyAndGetVertexAttributeLocation<edt::Vec3f>("a_velocity");
+            particle_shader_->GetInfo().VerifyAndGetVertexAttributeLocation<edt::Vec4f>("a_velocity");
         particles_velocities_buffer_ = OpenGl::GenBuffer();
-        std::vector<Vec3f> velocities(kTotalParticles, Vec3f{});
+        std::vector<Vec4f> velocities(kTotalParticles, Vec4f{});
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particles_velocities_buffer_.GetValue());
         OpenGl::BufferData(GlBufferType::ShaderStorage, std::span{velocities}, GlUsage::DynamicCopy);
         OpenGl::BindBuffer(GlBufferType::Array, particles_velocities_buffer_);
@@ -63,52 +65,45 @@ void GravitoyApp::Initialize()
 
         bodies_vao_ = OpenGl::GenVertexArray();
         const size_t a_body_shader_position =
-            body_shader_->GetInfo().VerifyAndGetVertexAttributeLocation<edt::Vec3f>("a_position");
+            body_shader_->GetInfo().VerifyAndGetVertexAttributeLocation<edt::Vec4f>("a_position");
         OpenGl::BindVertexArray(bodies_vao_);
         OpenGl::BindBuffer(GlBufferType::Array, bodies_positions_buffer_);
-        OpenGl::VertexAttribPointer(a_body_shader_position, 3, GlVertexAttribComponentType::Float, false, 0, nullptr);
+        OpenGl::VertexAttribPointer(a_body_shader_position, 4, GlVertexAttribComponentType::Float, false, 0, nullptr);
         OpenGl::EnableVertexAttribArray({});
 
         OpenGl::BindVertexArray({});
     }
 }
 
-std::vector<Vec3f> GravitoyApp::CalculateInitialParticePositions()
+std::vector<Vec4f> GravitoyApp::CalculateInitialParticePositions()
 {
-    std::vector<Vec3f> positions(kTotalParticles);
+    std::vector<Vec4f> positions;
+    positions.reserve(kTotalParticles);
 
-    float p = 0.6f;
-    const size_t s = static_cast<size_t>(std::round(std::pow(static_cast<float>(kTotalParticles), 1.f / 3)));
-    auto delta = Vec3f{} + 2 * p / static_cast<float>(s);
-
-    [&]
+    constexpr float radius = 15.f;
+    const double k = std::numbers::pi * 4.0 / (std::sqrt(5.0) + 1);
+    const double dn = static_cast<double>(kTotalParticles);
+    for (size_t i = 0; i != kTotalParticles; ++i)
     {
-        size_t i = 0;
-        for (size_t x = 0; x < s; x++)
-        {
-            for (size_t y = 0; y < s; y++)
-            {
-                for (size_t z = 0; z < s; z++)
-                {
-                    positions[i] = (Vec3<size_t>{x, y, z}.Cast<float>() * delta - p);
-                    if (++i == kTotalParticles)
-                    {
-                        return;
-                    }
-                }
-            }
-        }
-    }();
+        double di = static_cast<double>(i);
+        double theta = di * k;
+        double cos_phi = 1 - 2 * di / dn;
+        double sin_phi = std::sqrt(1 - Math::Sqr(cos_phi));
+        double x = std::cos(theta) * sin_phi;
+        double y = std::sin(theta) * sin_phi;
+        positions.push_back(Vec4f(Vec3<double>{x, y, cos_phi}.Cast<float>() * radius, 1));
+    }
 
     return positions;
 }
 
-std::span<const edt::Vec3f> GravitoyApp::UpdateBodiesPositions()
+std::span<const edt::Vec4f> GravitoyApp::UpdateBodiesPositions()
 {
     bodies_positions_.clear();
     for (BodyInfo& body : bodies_)
     {
-        bodies_positions_.push_back(Math::TransformPos(body.rotation.ToMatrix(), Vec3f{body.orbit_radius, 0, 0}));
+        bodies_positions_.push_back(
+            Vec4f(Math::TransformPos(body.rotation.ToMatrix(), Vec3f{body.orbit_radius, 0, 0}), 1));
     }
 
     return bodies_positions_;
