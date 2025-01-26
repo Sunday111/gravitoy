@@ -17,7 +17,6 @@
 #include "klgl/shader/shader.hpp"
 #include "klgl/window.hpp"
 
-
 namespace klgl::gravitoy
 {
 
@@ -41,6 +40,8 @@ class GravitoyApp : public Application
     std::tuple<int, int> GetOpenGLVersion() const override { return {4, 5}; }
 
     void Initialize() override;
+    void SimulationTimeStep();
+    void RenderWorld();
 
     std::span<const edt::Vec3f> UpdateBodiesPositions();
 
@@ -57,7 +58,7 @@ class GravitoyApp : public Application
     int time_steps_per_frame_ = 30;
     float camera_speed_ = 5.f;
     float time_step_ = 0.f;
-    Camera3d camera_{Vec3f{0, 15, 0}, {.yaw = -90, .pitch = 0}};
+    Camera3d camera_{Vec3f{0, 65, 0}, {.yaw = -90, .pitch = 0}};
 
     GlVertexArrayId particles_vao_;
     GlBufferId particels_positions_buffer_;

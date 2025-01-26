@@ -114,7 +114,13 @@ std::span<const edt::Vec3f> GravitoyApp::UpdateBodiesPositions()
 void GravitoyApp::Tick()
 {
     HandleInput();
+    SimulationTimeStep();
+    RenderWorld();
+    RenderGUI();
+}
 
+void GravitoyApp::SimulationTimeStep()
+{
     for ([[maybe_unused]] const int i : std::views::iota(0, time_steps_per_frame_))
     {
         for (BodyInfo& body : bodies_)
@@ -136,7 +142,10 @@ void GravitoyApp::Tick()
         glDispatchCompute(kTotalParticles, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
+}
 
+void GravitoyApp::RenderWorld()
+{
     OpenGl::EnableBlending();
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -169,8 +178,6 @@ void GravitoyApp::Tick()
         OpenGl::BindVertexArray(bodies_vao_);
         OpenGl::DrawArrays(GlPrimitiveType::Points, 0, bodies_positions_.size());
     }
-
-    RenderGUI();
 }
 
 void GravitoyApp::OnMouseMove(const events::OnMouseMove& event)
