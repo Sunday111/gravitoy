@@ -138,6 +138,9 @@ add_subdirectory(${YAE_expected_SOURCES} yae_modules/TartanLlama/expected SYSTEM
 set(YAE_klgl_SOURCES cloned_repositories/Sunday111/klgl/klgl)
 add_subdirectory(${YAE_klgl_SOURCES} yae_modules/cloned_repositories/Sunday111/klgl/klgl SYSTEM)
 
+set(YAE_gravitoy_lib_SOURCES src/gravitoy_lib)
+add_subdirectory(${YAE_gravitoy_lib_SOURCES} yae_modules/src/gravitoy_lib SYSTEM)
+
 set(YAE_gravitoy_SOURCES src/gravitoy)
 add_subdirectory(${YAE_gravitoy_SOURCES} yae_modules/src/gravitoy SYSTEM)
 

@@ -1,0 +1,11 @@
+{
+    "ModuleType": "Library",
+    "CopyDirectoriesAfterBuild": [
+        "content"
+    ],
+    "Dependencies": {
+        "Public": [
+            "klgl"
+        ]
+    }
+}
