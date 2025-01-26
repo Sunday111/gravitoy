@@ -1,0 +1,5 @@
+{
+    "compute": "compute_shader.comp",
+    "glsl_version": "430",
+    "definitions": []
+}

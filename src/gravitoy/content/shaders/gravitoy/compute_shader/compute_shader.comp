@@ -1,0 +1,49 @@
+layout (local_size_x = 1) in;
+
+const float Gravity1 = 1000.0;
+uniform vec3 BlackHolePos1 = vec3(5,0,0);
+
+const float Gravity2 = 1000.0;
+uniform vec3 BlackHolePos2 = vec3(-5,0,0);
+
+const float ParticleMass = 0.1;
+const float ParticleInvMass = 1.0 / ParticleMass;
+
+const float MaxDist = 45.0;
+uniform float u_delta_t = 0.000005;
+
+layout(std430, binding=0) buffer Pos {
+    vec3 Position[];
+};
+
+layout(std430, binding=1) buffer Vel {
+    vec3 Velocity[];
+};
+
+vec3 forceByBody(vec3 position, vec3 body, float gravity) {
+    vec3 position_to_body = body - position;
+    float dist = length(position_to_body);
+    vec3 dnorm = position_to_body / dist;
+    vec3 force = (gravity / dist) * dnorm;
+    return force;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    vec3 p = Position[idx].xyz;
+
+    // Compute gravitational force caused by bodies
+    vec3 force = forceByBody(p, BlackHolePos1, Gravity1) + forceByBody(p, BlackHolePos2, Gravity2);
+
+    // Apply simple Euler integrator
+    vec3 a = force * ParticleInvMass;
+    vec3 new_pos = p + Velocity[idx].xyz * u_delta_t + 0.5 * a * u_delta_t * u_delta_t;
+    Velocity[idx] = Velocity[idx].xyz + a * u_delta_t;
+
+    // Reset particles that get too far from origin
+    vec3[2] pos_opts;
+    pos_opts[0] = new_pos;
+    pos_opts[1] = vec3(0,0,0);
+    Position[idx] = pos_opts[dot(p, p) > (MaxDist * MaxDist) ? 1 : 0];
+}
