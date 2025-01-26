@@ -144,6 +144,9 @@ add_subdirectory(${YAE_gravitoy_lib_SOURCES} yae_modules/src/gravitoy_lib SYSTEM
 set(YAE_gravitoy_SOURCES src/gravitoy)
 add_subdirectory(${YAE_gravitoy_SOURCES} yae_modules/src/gravitoy SYSTEM)
 
+set(YAE_gravitoy_video_SOURCES src/gravitoy_video)
+add_subdirectory(${YAE_gravitoy_video_SOURCES} yae_modules/src/gravitoy_video SYSTEM)
+
 set(YAE_klgl_compute_shader_example_SOURCES cloned_repositories/Sunday111/klgl/examples/compute_shader)
 add_subdirectory(${YAE_klgl_compute_shader_example_SOURCES} yae_modules/cloned_repositories/Sunday111/klgl/examples/compute_shader SYSTEM)
 

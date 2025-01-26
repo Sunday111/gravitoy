@@ -35,6 +35,7 @@ public:
 
 class GravitoyApp : public Application
 {
+public:
     static std::vector<Vec3f> CalculateInitialParticePositions();
 
     std::tuple<int, int> GetOpenGLVersion() const override { return {4, 5}; }

@@ -18,6 +18,8 @@ void GravitoyApp::Initialize()
     event_listener_ = events::EventListenerMethodCallbacks<&GravitoyApp::OnMouseMove>::CreatePtr(this);
     GetEventManager().AddEventListener(*event_listener_);
 
+    camera_.SetFar(300.f);
+
     compute_shader_ = std::make_unique<Shader>("gravitoy/compute_shader");
     particle_shader_ = std::make_unique<Shader>("gravitoy/particle");
     body_shader_ = std::make_unique<Shader>("gravitoy/body");
@@ -75,8 +77,9 @@ std::vector<Vec3f> GravitoyApp::CalculateInitialParticePositions()
 {
     std::vector<Vec3f> positions(kTotalParticles);
 
+    float p = 0.6f;
     const size_t s = static_cast<size_t>(std::round(std::pow(static_cast<float>(kTotalParticles), 1.f / 3)));
-    auto delta = Vec3f{} + 2.f / static_cast<float>(s);
+    auto delta = Vec3f{} + 2 * p / static_cast<float>(s);
 
     [&]
     {
@@ -87,7 +90,7 @@ std::vector<Vec3f> GravitoyApp::CalculateInitialParticePositions()
             {
                 for (size_t z = 0; z < s; z++)
                 {
-                    positions[i] = (Vec3<size_t>{x, y, z}.Cast<float>() * delta - 1);
+                    positions[i] = (Vec3<size_t>{x, y, z}.Cast<float>() * delta - p);
                     if (++i == kTotalParticles)
                     {
                         return;

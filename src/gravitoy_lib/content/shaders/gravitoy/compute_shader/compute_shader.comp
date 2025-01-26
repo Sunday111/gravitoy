@@ -39,11 +39,13 @@ void main() {
     // Apply simple Euler integrator
     vec3 a = force * ParticleInvMass;
     vec3 new_pos = p + Velocity[idx].xyz * u_delta_t + 0.5 * a * u_delta_t * u_delta_t;
-    Velocity[idx] = Velocity[idx].xyz + a * u_delta_t;
+    vec3 new_vel = Velocity[idx].xyz + a * u_delta_t;
 
-    // Reset particles that get too far from origin
-    vec3[2] pos_opts;
-    pos_opts[0] = new_pos;
-    pos_opts[1] = vec3(0,0,0);
-    Position[idx] = pos_opts[dot(p, p) > (MaxDist * MaxDist) ? 1 : 0];
+    Position[idx] = new_pos;
+
+//    vec3[2] vel_opts;
+//    vel_opts[0] = new_vel;
+//    vel_opts[1] = new_vel + normalize(-new_pos);
+//    Velocity[idx] = vel_opts[dot(p, p) > (MaxDist * MaxDist) ? 1 : 0];
+    Velocity[idx] = new_vel;
 }
