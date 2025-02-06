@@ -165,6 +165,12 @@ add_subdirectory(${YAE_klgl_minimal_quad_example_SOURCES} yae_modules/cloned_rep
 set(YAE_klgl_painter2d_example_SOURCES cloned_repositories/Sunday111/klgl/examples/painter2d)
 add_subdirectory(${YAE_klgl_painter2d_example_SOURCES} yae_modules/cloned_repositories/Sunday111/klgl/examples/painter2d SYSTEM)
 
+set(YAE_klgl_post_processing_example_SOURCES cloned_repositories/Sunday111/klgl/examples/post_processing)
+add_subdirectory(${YAE_klgl_post_processing_example_SOURCES} yae_modules/cloned_repositories/Sunday111/klgl/examples/post_processing SYSTEM)
+
+set(YAE_klgl_render_to_texture_example_SOURCES cloned_repositories/Sunday111/klgl/examples/render_to_texture)
+add_subdirectory(${YAE_klgl_render_to_texture_example_SOURCES} yae_modules/cloned_repositories/Sunday111/klgl/examples/render_to_texture SYSTEM)
+
 set(YAE_klgl_rotator_benchmark_SOURCES cloned_repositories/Sunday111/klgl/benchmarks/rotators)
 add_subdirectory(${YAE_klgl_rotator_benchmark_SOURCES} yae_modules/cloned_repositories/Sunday111/klgl/benchmarks/rotators SYSTEM)
 

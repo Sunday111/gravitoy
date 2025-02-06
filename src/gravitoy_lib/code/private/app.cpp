@@ -4,11 +4,19 @@
 
 #include "klgl/events/event_listener_method.hpp"
 #include "klgl/events/event_manager.hpp"
+#include "klgl/mesh/procedural_mesh_generator.hpp"
 #include "klgl/opengl/gl_api.hpp"
 #include "klgl/opengl/vertex_attribute_helper.hpp"
+#include "klgl/template/register_attribute.hpp"
 
 namespace klgl::gravitoy
 {
+
+struct MeshVertex
+{
+    edt::Vec2f position{};
+    edt::Vec2f texture_coordinates{};
+};
 
 void GravitoyApp::Initialize()
 {
@@ -25,6 +33,8 @@ void GravitoyApp::Initialize()
     compute_shader_ = std::make_unique<Shader>("gravitoy/compute_shader");
     particle_shader_ = std::make_unique<Shader>("gravitoy/particle");
     body_shader_ = std::make_unique<Shader>("gravitoy/body");
+    textured_quad_shader_ = std::make_unique<Shader>("gravitoy/textured_quad");
+    blur_shader_ = std::make_unique<Shader>("gravitoy/blur");
 
     particles_vao_ = OpenGl::GenVertexArray();
     OpenGl::BindVertexArray(particles_vao_);
@@ -72,6 +82,40 @@ void GravitoyApp::Initialize()
         OpenGl::EnableVertexAttribArray({});
 
         OpenGl::BindVertexArray({});
+    }
+
+    {
+        // Create quad mesh
+        const auto mesh_data = klgl::ProceduralMeshGenerator::GenerateQuadMesh();
+
+        std::vector<MeshVertex> vertices;
+        vertices.reserve(mesh_data.vertices.size());
+        for (size_t i = 0; i != mesh_data.vertices.size(); ++i)
+        {
+            vertices.emplace_back(MeshVertex{
+                .position = mesh_data.vertices[i],
+                .texture_coordinates = mesh_data.texture_coordinates[i],
+            });
+        }
+
+        mesh_ = klgl::MeshOpenGL::MakeFromData(std::span{vertices}, std::span{mesh_data.indices}, mesh_data.topology);
+        mesh_->Bind();
+
+        // Declare vertex buffer layout
+        klgl::RegisterAttribute<&MeshVertex::position>(0);
+        klgl::RegisterAttribute<&MeshVertex::texture_coordinates>(1);
+    }
+}
+
+void GravitoyApp::UpdateFramebuffers()
+{
+    if (const auto resolution = GetWindow().GetSize().Cast<size_t>(); resolution != fbo_resolution_)
+    {
+        fbo_resolution_ = resolution;
+        for (auto& f : framebuffers_)
+        {
+            f.CreateWithResolution(resolution);
+        }
     }
 }
 
@@ -144,37 +188,81 @@ void GravitoyApp::SimulationTimeStep()
 
 void GravitoyApp::RenderWorld()
 {
-    OpenGl::EnableBlending();
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    const auto mvp = camera_.GetViewMatrix().MatMul(camera_.GetProjectionMatrix(GetWindow().GetAspect()));
-
+    UpdateFramebuffers();
+    auto render_scene = [&]
     {
-        // Draw the particles
-        particle_shader_->Use();
-        particle_shader_->SetUniform(u_particle_mvp_, mvp);
-        particle_shader_->SetUniform(u_particle_color_, Vec4f{1, 1, 1, particle_alpha_});
-        particle_shader_->SendUniforms();
+        OpenGl::EnableBlending();
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-        OpenGl::PointSize(2.f);
-        OpenGl::BindVertexArray(particles_vao_);
-        OpenGl::DrawArrays(GlPrimitiveType::Points, 0, kTotalParticles);
+        const auto mvp = camera_.GetViewMatrix().MatMul(camera_.GetProjectionMatrix(GetWindow().GetAspect()));
+
+        {
+            // Draw the particles
+            particle_shader_->Use();
+            particle_shader_->SetUniform(u_particle_mvp_, mvp);
+            particle_shader_->SetUniform(u_particle_color_, Vec4f{1, 1, 1, particle_alpha_});
+            particle_shader_->SendUniforms();
+
+            OpenGl::PointSize(2.f);
+            OpenGl::BindVertexArray(particles_vao_);
+            OpenGl::DrawArrays(GlPrimitiveType::Points, 0, kTotalParticles);
+        }
+
+        {
+            // Draw bodies
+            body_shader_->Use();
+            body_shader_->SetUniform(u_body_mvp_, mvp);
+            body_shader_->SetUniform(u_body_color_, Vec4f{1, 0, 0, 1});
+            body_shader_->SendUniforms();
+
+            // Update bodies positions
+            OpenGl::BindBuffer(GlBufferType::Array, bodies_positions_buffer_);
+            OpenGl::BufferSubData(GlBufferType::Array, 0, std::span{bodies_positions_});
+
+            OpenGl::PointSize(15.f);
+            OpenGl::BindVertexArray(bodies_vao_);
+            OpenGl::DrawArrays(GlPrimitiveType::Points, 0, bodies_positions_.size());
+        }
+    };
+
+    // Render scene to texture
+    {
+        framebuffers_[0].Bind();
+        OpenGl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        render_scene();
     }
 
+    // Pass 1: Do blur passes
+    for (size_t i = 0; i != 20; ++i)
     {
-        // Draw bodies
-        body_shader_->Use();
-        body_shader_->SetUniform(u_body_mvp_, mvp);
-        body_shader_->SetUniform(u_body_color_, Vec4f{1, 0, 0, 1});
-        body_shader_->SendUniforms();
+        uint32_t is_horizontal = i % 2 != 0;
 
-        // Update bodies positions
-        OpenGl::BindBuffer(GlBufferType::Array, bodies_positions_buffer_);
-        OpenGl::BufferSubData(GlBufferType::Array, 0, std::span{bodies_positions_});
+        framebuffers_[(i + 1) % 2].Bind();  // Store result in fbo[1]
+        OpenGl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-        OpenGl::PointSize(15.f);
-        OpenGl::BindVertexArray(bodies_vao_);
-        OpenGl::DrawArrays(GlPrimitiveType::Points, 0, bodies_positions_.size());
+        auto& texture = *framebuffers_[i % 2].color;
+
+        blur_shader_->Use();
+        blur_shader_->SetUniform(u_blur_shader_horizontal_, is_horizontal);
+        blur_shader_->SetUniform(u_blur_shader_texture_, texture);
+        blur_shader_->SendUniforms();
+
+        texture.Bind();
+        mesh_->BindAndDraw();
+    }
+
+    // Render to screen
+    {
+        auto& texture = *framebuffers_[0].color;
+        OpenGl::BindFramebuffer(GlFramebufferBindTarget::DrawAndRead, {});
+        OpenGl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        textured_quad_shader_->Use();
+        textured_quad_shader_->SetUniform(u_textured_quad_shader_texture_, texture);
+        textured_quad_shader_->SendUniforms();
+        texture.Bind();
+        mesh_->BindAndDraw();
+
+        render_scene();
     }
 }
 

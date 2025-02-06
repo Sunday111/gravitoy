@@ -6,15 +6,18 @@
 #include <ass/enum_map.hpp>
 #include <ass/enum_set.hpp>
 #include <klgl/events/event_listener_interface.hpp>
+#include <klgl/mesh/mesh_data.hpp>
 #include <klgl/shader/shader.hpp>
 #include <klgl/ui/simple_type_widget.hpp>
 
 #include "klgl/application.hpp"
 #include "klgl/camera/camera_3d.hpp"
+#include "klgl/error_handling.hpp"
 #include "klgl/events/mouse_events.hpp"
 #include "klgl/math/rotator.hpp"
 #include "klgl/reflection/matrix_reflect.hpp"  // IWYU pragma: keep
 #include "klgl/shader/shader.hpp"
+#include "klgl/texture/texture.hpp"
 #include "klgl/window.hpp"
 
 namespace klgl::gravitoy
@@ -31,6 +34,68 @@ public:
     Rotator initial_rotation;
     Rotator rotation_per_second;
     Rotator rotation;
+};
+
+class Framebuffer
+{
+public:
+    void Bind(GlFramebufferBindTarget target = GlFramebufferBindTarget::DrawAndRead)
+    {
+        OpenGl::BindFramebuffer(target, fbo);
+    }
+
+    void CreateWithResolution(const edt::Vec2<size_t>& resolution)
+    {
+        if (fbo.IsValid())
+        {
+            OpenGl::DeleteFramebuffer(fbo);
+            fbo = {};
+
+            depth_stencil = nullptr;
+
+            OpenGl::DeleteRenderbuffer(rbo_depth_stencil);
+            rbo_depth_stencil = {};
+        }
+
+        rbo_depth_stencil = OpenGl::GenRenderbuffer();
+        OpenGl::BindRenderbuffer(rbo_depth_stencil);
+        OpenGl::RenderbufferStorage(GlTextureInternalFormat::DEPTH24_STENCIL8, resolution);
+
+        color = Texture::CreateEmpty(resolution, GlTextureInternalFormat::RGB32F);
+        color->Bind();
+        OpenGl::SetTextureMinFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Nearest);
+        OpenGl::SetTextureMagFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Nearest);
+        for (const auto axis : ass::EnumSet<GlTextureWrapAxis>::Full())
+        {
+            OpenGl::SetTextureWrap(GlTargetTextureType::Texture2d, axis, GlTextureWrapMode::ClampToBorder);
+        }
+
+        fbo = OpenGl::GenFramebuffer();
+        Bind();
+
+        // Color
+        OpenGl::FramebufferTexture2D(
+            GlFramebufferBindTarget::DrawAndRead,
+            GlFramebufferAttachment::Color0,
+            GlTargetTextureType::Texture2d,
+            color->GetTexture());
+
+        // Depth stencil
+        OpenGl::FramebufferRenderbuffer(
+            GlFramebufferBindTarget::DrawAndRead,
+            GlFramebufferAttachment::DepthStencil,
+            rbo_depth_stencil);
+
+        ErrorHandling::Ensure(
+            glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE,
+            "Incomplete frambuffer!");
+        OpenGl::BindFramebuffer(GlFramebufferBindTarget::DrawAndRead, {});
+    }
+
+    GlRenderbufferId rbo_depth_stencil;
+    GlFramebufferId fbo{};
+    std::unique_ptr<Texture> color{};
+    std::unique_ptr<Texture> depth_stencil{};
 };
 
 class GravitoyApp : public Application
@@ -53,6 +118,8 @@ public:
     void RenderGUI();
 
     void HandleInput();
+
+    void UpdateFramebuffers();
 
     static constexpr size_t kTotalParticles = 1'000'000;
 
@@ -82,6 +149,13 @@ public:
     UniformHandle u_body_color_ = UniformHandle("u_color");
     UniformHandle u_body_mvp_ = UniformHandle("u_mvp");
 
+    std::shared_ptr<Shader> textured_quad_shader_;
+    UniformHandle u_textured_quad_shader_texture_ = UniformHandle("u_texture");
+
+    std::shared_ptr<Shader> blur_shader_;
+    UniformHandle u_blur_shader_texture_ = UniformHandle("u_texture");
+    UniformHandle u_blur_shader_horizontal_ = UniformHandle("u_horizontal");
+
     std::vector<Vec4f> bodies_positions_;
 
     float particle_alpha_ = 0.1f;
@@ -103,6 +177,10 @@ public:
             .rotation{},
         },
     };
+
+    std::shared_ptr<MeshOpenGL> mesh_;
+    edt::Vec2<size_t> fbo_resolution_{};
+    std::array<Framebuffer, 2> framebuffers_{};
 };
 
 }  // namespace klgl::gravitoy

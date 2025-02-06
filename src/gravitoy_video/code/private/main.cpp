@@ -62,6 +62,11 @@ public:
         Super::Initialize();
         GetWindow().SetSize(3840, 2160);
 
+        DefineHandle color_def(Name("COLOR_FUNCTION"));
+        particle_shader_->SetDefineValue(color_def, 1);
+        std::string buf;
+        particle_shader_->Compile(buf);
+
         const auto window_size = GetWindow().GetSize();
         const auto window_size_i = window_size.Cast<int>();
         frame_image_ = cv::Mat(window_size_i.y(), window_size_i.x(), CV_8UC3);
