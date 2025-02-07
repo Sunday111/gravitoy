@@ -9,6 +9,7 @@
 #include <klgl/mesh/mesh_data.hpp>
 #include <klgl/shader/shader.hpp>
 #include <klgl/ui/simple_type_widget.hpp>
+#include <numbers>
 
 #include "klgl/application.hpp"
 #include "klgl/camera/camera_3d.hpp"
@@ -59,12 +60,12 @@ public:
 
         rbo_depth_stencil = OpenGl::GenRenderbuffer();
         OpenGl::BindRenderbuffer(rbo_depth_stencil);
-        OpenGl::RenderbufferStorage(GlTextureInternalFormat::DEPTH24_STENCIL8, resolution);
+        OpenGl::RenderbufferStorage(GlTextureInternalFormat::DEPTH24_STENCIL8, resolution * 4);
 
-        color = Texture::CreateEmpty(resolution, GlTextureInternalFormat::RGB32F);
+        color = Texture::CreateEmpty(resolution * 4, GlTextureInternalFormat::RGB32F);
         color->Bind();
-        OpenGl::SetTextureMinFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Nearest);
-        OpenGl::SetTextureMagFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Nearest);
+        OpenGl::SetTextureMinFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Linear);
+        OpenGl::SetTextureMagFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Linear);
         for (const auto axis : ass::EnumSet<GlTextureWrapAxis>::Full())
         {
             OpenGl::SetTextureWrap(GlTargetTextureType::Texture2d, axis, GlTextureWrapMode::ClampToBorder);
@@ -98,10 +99,27 @@ public:
     std::unique_ptr<Texture> depth_stencil{};
 };
 
+template <std::invocable<edt::Vec3f> F>
+inline void UniformSphereSurface(size_t num_points, float radius, F consumer)
+{
+    const double k = std::numbers::pi * 4.0 / (std::sqrt(5.0) + 1);
+    const double dn = static_cast<double>(num_points);
+    for (size_t i = 0; i != num_points; ++i)
+    {
+        double di = static_cast<double>(i);
+        double theta = di * k;
+        double cos_phi = 1 - 2 * di / dn;
+        double sin_phi = std::sqrt(1 - Math::Sqr(cos_phi));
+        double x = std::cos(theta) * sin_phi;
+        double y = std::sin(theta) * sin_phi;
+        consumer(Vec3<double>{x, y, cos_phi}.Cast<float>() * radius);
+    }
+}
+
 class GravitoyApp : public Application
 {
 public:
-    static std::vector<Vec4f> CalculateInitialParticePositions();
+    virtual std::vector<Vec4f> CalculateInitialParticePositions() const;
 
     std::tuple<int, int> GetOpenGLVersion() const override { return {4, 5}; }
 
@@ -109,7 +127,7 @@ public:
     void SimulationTimeStep();
     void RenderWorld();
 
-    std::span<const edt::Vec4f> UpdateBodiesPositions();
+    virtual std::span<const edt::Vec4f> UpdateBodiesPositions();
 
     void Tick() override;
 
@@ -139,8 +157,7 @@ public:
     std::shared_ptr<Shader> particle_shader_;
     std::shared_ptr<Shader> body_shader_;
 
-    UniformHandle u_body_a_pos_ = UniformHandle("BlackHolePos1");
-    UniformHandle u_body_b_pos_ = UniformHandle("BlackHolePos2");
+    UniformHandle u_bodies_ = UniformHandle("Bodies");
     UniformHandle u_delta_t_ = UniformHandle("u_delta_t");
 
     UniformHandle u_particle_color_ = UniformHandle("u_color");
@@ -161,19 +178,47 @@ public:
     float particle_alpha_ = 0.1f;
 
     std::unique_ptr<events::IEventListener> event_listener_;
-    std::array<BodyInfo, 2> bodies_{
+    std::array<BodyInfo, 6> bodies_{
+        BodyInfo{
+            .orbit_center{0, 0, 0},
+            .orbit_radius = 5,
+            .initial_rotation{.yaw = -90.f},
+            .rotation_per_second = {},
+            .rotation{},
+        },
+        BodyInfo{
+            .orbit_center{0, 0, 0},
+            .orbit_radius = 5,
+            .initial_rotation{.yaw = 90.f},
+            .rotation_per_second = {},
+            .rotation{},
+        },
         BodyInfo{
             .orbit_center{0, 0, 0},
             .orbit_radius = 5,
             .initial_rotation{.pitch = 0},
-            .rotation_per_second{.yaw = 500, .pitch = 600, .roll = 700},
+            .rotation_per_second = {},
             .rotation{},
         },
         BodyInfo{
             .orbit_center{0, 0, 0},
             .orbit_radius = 5,
             .initial_rotation{.pitch = 180},
-            .rotation_per_second{.yaw = 500, .pitch = 600, .roll = 700},
+            .rotation_per_second = {},
+            .rotation{},
+        },
+        BodyInfo{
+            .orbit_center{0, 0, 0},
+            .orbit_radius = 5,
+            .initial_rotation{.yaw = 90, .pitch = -90},
+            .rotation_per_second = {},
+            .rotation{},
+        },
+        BodyInfo{
+            .orbit_center{0, 0, 0},
+            .orbit_radius = 5,
+            .initial_rotation{.yaw = 90, .pitch = 90},
+            .rotation_per_second = {},
             .rotation{},
         },
     };

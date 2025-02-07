@@ -1,10 +1,11 @@
 layout (local_size_x = 1) in;
 
-const float Gravity1 = 1000.0;
-uniform vec4 BlackHolePos1 = vec4(5,0,0,0);
+#ifndef NUM_BODIES
+#define NUM_BODIES 2
+#endif
 
-const float Gravity2 = 1000.0;
-uniform vec4 BlackHolePos2 = vec4(-5,0,0,0);
+const float BodyGravity = 1000.0;
+uniform vec4 Bodies[NUM_BODIES];
 
 const float ParticleMass = 0.1;
 const float ParticleInvMass = 1.0 / ParticleMass;
@@ -34,7 +35,10 @@ void main() {
     vec3 p = Position[idx].xyz;
 
     // Compute gravitational force caused by bodies
-    vec3 force = forceByBody(p, BlackHolePos1.xyz, Gravity1) + forceByBody(p, BlackHolePos2.xyz, Gravity2);
+    vec3 force = vec3(0, 0, 0);
+    for (int i = 0; i != NUM_BODIES; ++i) {
+        force += forceByBody(p, Bodies[i].xyz, BodyGravity);
+    }
 
     // Apply simple Euler integrator
     vec3 a = force * ParticleInvMass;

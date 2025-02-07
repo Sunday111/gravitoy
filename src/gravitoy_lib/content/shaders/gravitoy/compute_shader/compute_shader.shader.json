@@ -1,5 +1,11 @@
 {
     "compute": "compute_shader.comp",
     "glsl_version": "430",
-    "definitions": []
+    "definitions": [
+        {
+            "name": "NUM_BODIES",
+            "type": "int",
+            "default": 2
+        }
+    ]
 }

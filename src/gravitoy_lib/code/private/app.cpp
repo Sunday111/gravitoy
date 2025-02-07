@@ -1,5 +1,6 @@
 #include "gravitoy/app.hpp"
 
+#include <klgl/shader/shader_define.hpp>
 #include <numbers>
 
 #include "klgl/events/event_listener_method.hpp"
@@ -35,6 +36,12 @@ void GravitoyApp::Initialize()
     body_shader_ = std::make_unique<Shader>("gravitoy/body");
     textured_quad_shader_ = std::make_unique<Shader>("gravitoy/textured_quad");
     blur_shader_ = std::make_unique<Shader>("gravitoy/blur");
+
+    {
+        auto d = compute_shader_->GetDefine(Name{"NUM_BODIES"});
+        const int num_bodies = static_cast<int>(bodies_.size());
+        compute_shader_->SetDefineValue(d, num_bodies);
+    }
 
     particles_vao_ = OpenGl::GenVertexArray();
     OpenGl::BindVertexArray(particles_vao_);
@@ -119,7 +126,7 @@ void GravitoyApp::UpdateFramebuffers()
     }
 }
 
-std::vector<Vec4f> GravitoyApp::CalculateInitialParticePositions()
+std::vector<Vec4f> GravitoyApp::CalculateInitialParticePositions() const
 {
     std::vector<Vec4f> positions;
     positions.reserve(kTotalParticles);
@@ -177,8 +184,11 @@ void GravitoyApp::SimulationTimeStep()
 
         // Compute particles
         compute_shader_->Use();
-        compute_shader_->SetUniform(u_body_a_pos_, bodies_positions_[0]);
-        compute_shader_->SetUniform(u_body_b_pos_, bodies_positions_[1]);
+
+        glUniform4fv(
+            static_cast<GLint>(compute_shader_->GetUniformLocation("Bodies")),
+            static_cast<GLsizei>(bodies_positions_.size()),
+            bodies_positions_.front().data());
         compute_shader_->SetUniform(u_delta_t_, time_step_);
         compute_shader_->SendUniforms();
         glDispatchCompute(kTotalParticles, 1, 1);
