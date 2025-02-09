@@ -1,8 +1,8 @@
 #include "gravitoy/app.hpp"
 
 #include <klgl/shader/shader_define.hpp>
-#include <numbers>
 
+#include "EverydayTools/Math/SurfacePoints.hpp"
 #include "klgl/events/event_listener_method.hpp"
 #include "klgl/events/event_manager.hpp"
 #include "klgl/mesh/procedural_mesh_generator.hpp"
@@ -18,6 +18,56 @@ struct MeshVertex
     edt::Vec2f position{};
     edt::Vec2f texture_coordinates{};
 };
+
+std::vector<float> GenerateGaussianKernel(size_t kernelSize, float sigma)
+{
+    assert(kernelSize % 2 == 1);  // expected to be odd number
+    size_t halfSize = kernelSize / 2;
+    std::vector<float> kernel(halfSize + 1);
+
+    float variance = sigma * sigma;
+    float denominator = std::sqrt(2 * std::numbers::pi_v<float> * variance);
+
+    for (size_t i = 0; i <= halfSize; i++)
+    {
+        float x = static_cast<float>(i);
+        kernel[i] = std::exp(-x * x / variance) / denominator;
+    }
+
+    float sum = kernel.front();
+    for (float v : kernel | std::views::drop(1))
+    {
+        sum += 2 * v;
+    }
+
+    for (float& v : kernel)
+    {
+        v /= sum;
+    }
+
+    return kernel;
+}
+
+void GravitoyApp::UpdateBlurShader()
+{
+    blur_weights_ = GenerateGaussianKernel(2 * max_blur_offset_ + 1, blur_sigma_);
+    auto d = blur_shader_->GetDefine(Name{"NUM_BLUR_WEIGHTS"});
+    blur_shader_->SetDefineValue(d, static_cast<int>(max_blur_offset_ + 1));
+    std::string compile_buffer;
+    blur_shader_->Compile(compile_buffer);
+
+    blur_shader_->Use();
+
+    std::string uniform_name;
+    for (size_t i = 0; i != blur_weights_.size(); ++i)
+    {
+        uniform_name.clear();
+        std::format_to(std::back_inserter(uniform_name), "u_blur_weights[{}]", i);
+        auto loc = blur_shader_->GetUniform(Name(uniform_name));
+        blur_shader_->SetUniform(loc, blur_weights_[i]);
+        blur_shader_->SendUniform(loc);
+    }
+}
 
 void GravitoyApp::Initialize()
 {
@@ -37,10 +87,14 @@ void GravitoyApp::Initialize()
     textured_quad_shader_ = std::make_unique<Shader>("gravitoy/textured_quad");
     blur_shader_ = std::make_unique<Shader>("gravitoy/blur");
 
+    UpdateBlurShader();
+
     {
         auto d = compute_shader_->GetDefine(Name{"NUM_BODIES"});
         const int num_bodies = static_cast<int>(bodies_.size());
         compute_shader_->SetDefineValue(d, num_bodies);
+        std::string compile_buffer;
+        compute_shader_->Compile(compile_buffer);
     }
 
     particles_vao_ = OpenGl::GenVertexArray();
@@ -116,13 +170,17 @@ void GravitoyApp::Initialize()
 
 void GravitoyApp::UpdateFramebuffers()
 {
-    if (const auto resolution = GetWindow().GetSize().Cast<size_t>(); resolution != fbo_resolution_)
+    const auto resolution = GetWindow().GetSize().Cast<size_t>();
+    if (resolution == fbo_resolution_ && resolution * msaa_ == fbo_upscaled_resolution_)
     {
-        fbo_resolution_ = resolution;
-        for (auto& f : framebuffers_)
-        {
-            f.CreateWithResolution(resolution);
-        }
+        return;
+    }
+
+    fbo_resolution_ = resolution;
+    fbo_upscaled_resolution_ = fbo_resolution_ * msaa_;
+    for (auto& f : blur_framebuffers_)
+    {
+        f.CreateWithResolution(fbo_upscaled_resolution_);
     }
 }
 
@@ -131,19 +189,10 @@ std::vector<Vec4f> GravitoyApp::CalculateInitialParticePositions() const
     std::vector<Vec4f> positions;
     positions.reserve(kTotalParticles);
 
-    constexpr float radius = 15.f;
-    const double k = std::numbers::pi * 4.0 / (std::sqrt(5.0) + 1);
-    const double dn = static_cast<double>(kTotalParticles);
-    for (size_t i = 0; i != kTotalParticles; ++i)
-    {
-        double di = static_cast<double>(i);
-        double theta = di * k;
-        double cos_phi = 1 - 2 * di / dn;
-        double sin_phi = std::sqrt(1 - Math::Sqr(cos_phi));
-        double x = std::cos(theta) * sin_phi;
-        double y = std::sin(theta) * sin_phi;
-        positions.push_back(Vec4f(Vec3<double>{x, y, cos_phi}.Cast<float>() * radius, 1));
-    }
+    edt::SurfacePointsUtilities::HeartSurface(
+        kTotalParticles,
+        1.f,
+        [&](Vec3f v) { positions.push_back(Vec4f(v, 1.f)); });
 
     return positions;
 }
@@ -237,22 +286,28 @@ void GravitoyApp::RenderWorld()
 
     // Render scene to texture
     {
-        framebuffers_[0].Bind();
+        blur_framebuffers_[0].Bind();
         OpenGl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        OpenGl::Viewport(
+            0,
+            0,
+            static_cast<GLsizei>(fbo_upscaled_resolution_.x()),
+            static_cast<GLsizei>(fbo_upscaled_resolution_.y()));
         render_scene();
     }
 
     // Pass 1: Do blur passes
-    for (size_t i = 0; i != 20; ++i)
+    blur_shader_->Use();
+
+    for (size_t i = 0; i != num_blur_passes_ * 2; ++i)
     {
         uint32_t is_horizontal = i % 2 != 0;
 
-        framebuffers_[(i + 1) % 2].Bind();  // Store result in fbo[1]
+        blur_framebuffers_[(i + 1) % 2].Bind();
         OpenGl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-        auto& texture = *framebuffers_[i % 2].color;
+        auto& texture = *blur_framebuffers_[i % 2].color;
 
-        blur_shader_->Use();
         blur_shader_->SetUniform(u_blur_shader_horizontal_, is_horizontal);
         blur_shader_->SetUniform(u_blur_shader_texture_, texture);
         blur_shader_->SendUniforms();
@@ -261,18 +316,23 @@ void GravitoyApp::RenderWorld()
         mesh_->BindAndDraw();
     }
 
+    // Render scene again over blurred image
+    {
+        blur_framebuffers_.front().Bind();
+        render_scene();
+    }
+
     // Render to screen
     {
-        auto& texture = *framebuffers_[0].color;
+        auto& texture = *blur_framebuffers_.front().color;
         OpenGl::BindFramebuffer(GlFramebufferBindTarget::DrawAndRead, {});
+        OpenGl::Viewport(0, 0, static_cast<GLsizei>(fbo_resolution_.x()), static_cast<GLsizei>(fbo_resolution_.y()));
         OpenGl::Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         textured_quad_shader_->Use();
         textured_quad_shader_->SetUniform(u_textured_quad_shader_texture_, texture);
         textured_quad_shader_->SendUniforms();
         texture.Bind();
         mesh_->BindAndDraw();
-
-        render_scene();
     }
 }
 
@@ -300,6 +360,12 @@ void GravitoyApp::RenderGUI()
         ImGui::SliderInt("Time steps per frame", &time_steps_per_frame_, 0, 40);
         ImGui::SliderFloat("Particle alpha", &particle_alpha_, 0.0001f, 1.f, "%.4f");
 
+        int msaa = static_cast<int>(msaa_);
+        if (ImGui::SliderInt("MSAA", &msaa, 1, 4))
+        {
+            msaa_ = static_cast<size_t>(msaa);
+        }
+
         if (ImGui::CollapsingHeader("Bodies"))
         {
             auto rotator_widget = [](std::string_view title, Rotator& rotator)
@@ -324,6 +390,32 @@ void GravitoyApp::RenderGUI()
                     rotator_widget("Current rotation", body.rotation);
                 }
                 ImGui::PopID();
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Blur"))
+        {
+            if (ImGui::SliderFloat("Intensity", &blur_sigma_, 0.1f, 10.f))
+            {
+                UpdateBlurShader();
+            }
+
+            int blur_offset = static_cast<int>(max_blur_offset_);
+            if (ImGui::SliderInt("Area", &blur_offset, 1, 16))
+            {
+                max_blur_offset_ = static_cast<size_t>(blur_offset);
+                UpdateBlurShader();
+            }
+
+            int n_passes = static_cast<int>(num_blur_passes_);
+            if (ImGui::SliderInt("Passes", &n_passes, 1, 30))
+            {
+                num_blur_passes_ = static_cast<size_t>(n_passes);
+            }
+
+            if (ImGui::CollapsingHeader("Shader"))
+            {
+                blur_shader_->DrawDetails();
             }
         }
 

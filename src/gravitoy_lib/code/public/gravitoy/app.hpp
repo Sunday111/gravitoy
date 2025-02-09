@@ -9,7 +9,6 @@
 #include <klgl/mesh/mesh_data.hpp>
 #include <klgl/shader/shader.hpp>
 #include <klgl/ui/simple_type_widget.hpp>
-#include <numbers>
 
 #include "klgl/application.hpp"
 #include "klgl/camera/camera_3d.hpp"
@@ -60,9 +59,9 @@ public:
 
         rbo_depth_stencil = OpenGl::GenRenderbuffer();
         OpenGl::BindRenderbuffer(rbo_depth_stencil);
-        OpenGl::RenderbufferStorage(GlTextureInternalFormat::DEPTH24_STENCIL8, resolution * 4);
+        OpenGl::RenderbufferStorage(GlTextureInternalFormat::DEPTH24_STENCIL8, resolution);
 
-        color = Texture::CreateEmpty(resolution * 4, GlTextureInternalFormat::RGB32F);
+        color = Texture::CreateEmpty(resolution, GlTextureInternalFormat::RGB32F);
         color->Bind();
         OpenGl::SetTextureMinFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Linear);
         OpenGl::SetTextureMagFilter(GlTargetTextureType::Texture2d, GlTextureFilter::Linear);
@@ -99,23 +98,6 @@ public:
     std::unique_ptr<Texture> depth_stencil{};
 };
 
-template <std::invocable<edt::Vec3f> F>
-inline void UniformSphereSurface(size_t num_points, float radius, F consumer)
-{
-    const double k = std::numbers::pi * 4.0 / (std::sqrt(5.0) + 1);
-    const double dn = static_cast<double>(num_points);
-    for (size_t i = 0; i != num_points; ++i)
-    {
-        double di = static_cast<double>(i);
-        double theta = di * k;
-        double cos_phi = 1 - 2 * di / dn;
-        double sin_phi = std::sqrt(1 - Math::Sqr(cos_phi));
-        double x = std::cos(theta) * sin_phi;
-        double y = std::sin(theta) * sin_phi;
-        consumer(Vec3<double>{x, y, cos_phi}.Cast<float>() * radius);
-    }
-}
-
 class GravitoyApp : public Application
 {
 public:
@@ -126,6 +108,7 @@ public:
     void Initialize() override;
     void SimulationTimeStep();
     void RenderWorld();
+    void UpdateBlurShader();
 
     virtual std::span<const edt::Vec4f> UpdateBodiesPositions();
 
@@ -172,6 +155,11 @@ public:
     std::shared_ptr<Shader> blur_shader_;
     UniformHandle u_blur_shader_texture_ = UniformHandle("u_texture");
     UniformHandle u_blur_shader_horizontal_ = UniformHandle("u_horizontal");
+    UniformHandle u_blur_shader_weights_ = UniformHandle("u_blur_weights");
+    std::vector<float> blur_weights_;
+    float blur_sigma_ = 2.f;
+    size_t max_blur_offset_ = 4;
+    size_t num_blur_passes_ = 10;
 
     std::vector<Vec4f> bodies_positions_;
 
@@ -225,7 +213,10 @@ public:
 
     std::shared_ptr<MeshOpenGL> mesh_;
     edt::Vec2<size_t> fbo_resolution_{};
-    std::array<Framebuffer, 2> framebuffers_{};
+    edt::Vec2<size_t> fbo_upscaled_resolution_{};
+    size_t msaa_ = 1;
+
+    std::array<Framebuffer, 2> blur_framebuffers_{};
 };
 
 }  // namespace klgl::gravitoy

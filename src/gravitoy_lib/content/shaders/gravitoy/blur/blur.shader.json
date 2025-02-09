@@ -1,0 +1,11 @@
+{
+    "compute": "compute_shader.comp",
+    "glsl_version": "430",
+    "definitions": [
+        {
+            "name": "NUM_BLUR_WEIGHTS",
+            "type": "int",
+            "default": 5
+        }
+    ]
+}
